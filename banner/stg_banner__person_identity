@@ -1,0 +1,79 @@
+{{ 
+    config(
+        materialized='view',
+        tags=['staging', 'banner', 'identity', 'core']
+    )
+}}
+
+/*
+Purpose: Person identification and demographic information
+Source: SPRIDEN (Person Identification)
+Grain: One row per person per ID type (with change_ind tracking)
+Key: SPRIDEN_PIDM + SPRIDEN_CHANGE_IND (NULL = current)
+*/
+
+with source as (
+    select * from {{ source('banner', 'spriden') }}
+),
+
+renamed as (
+    select 
+        -- Primary Key
+        spriden_pidm as person_pidm,
+        
+        -- ID Information
+        spriden_id as person_id,
+        spriden_change_ind as change_indicator,
+        
+        -- Name Information
+        spriden_last_name as last_name,
+        spriden_first_name as first_name,
+        spriden_mi as middle_initial,
+        
+        -- Entity Type
+        spriden_entity_ind as entity_indicator,
+        
+        -- Current Record Flag
+        case 
+            when spriden_change_ind is null then true 
+            else false 
+        end as is_current_record,
+        
+        -- Calculated: Full Name
+        trim(
+            coalesce(spriden_first_name, '') || ' ' ||
+            coalesce(spriden_mi, '') || ' ' ||
+            coalesce(spriden_last_name, '')
+        ) as full_name,
+        
+        -- Calculated: Display Name (Last, First)
+        trim(
+            coalesce(spriden_last_name, '') || ', ' ||
+            coalesce(spriden_first_name, '')
+        ) as display_name,
+        
+        -- Name Prefix/Suffix
+        spriden_ntyp_code as name_type_code,
+        spriden_surname_prefix as surname_prefix,
+        
+        -- Search Key (for matching)
+        spriden_search_last_name as search_last_name,
+        spriden_search_first_name as search_first_name,
+        spriden_search_mi as search_middle_initial,
+        
+        -- System Fields
+        spriden_activity_date as activity_date,
+        spriden_user as last_updated_by,
+        spriden_origin as data_origin,
+        spriden_create_user as created_by,
+        cast(spriden_create_date as date) as created_date,
+        spriden_vpdi_code as vpdi_code,
+        
+        -- Metadata
+        {{ add_source_metadata('banner', 'spriden') }}
+        
+    from source
+    where spriden_pidm is not null
+)
+
+select * from renamed
