@@ -1,0 +1,222 @@
+version: 2
+
+sources:
+  - name: banner
+    description: |
+      Ellucian Banner ERP system tables.
+      Banner is the administrative system of record for student, course, and financial data.
+      Schema owner is typically SATURN for most Banner tables.
+    
+    database: "{{ env_var('DBT_DATABASE', 'YOUR_SNOWFLAKE_DATABASE') }}"
+    schema: banner_deposit  # Or whatever schema you load Banner into
+    
+    # You may need to configure this based on your Snowflake loading process
+    meta:
+      source_system: BANNER
+      data_owner: IT_SYSTEMS
+      contains_pii: true
+    
+    tables:
+      # ==================================================
+      # CORE IDENTITY & DEMOGRAPHICS
+      # ==================================================
+      
+      - name: spriden
+        description: |
+          Person Identification table - the master person table in Banner.
+          Contains name and ID information for all persons (students, employees, etc.)
+        identifier: spriden  # Actual table name in source
+        meta:
+          banner_table_type: PERSON
+          contains_pii: true
+        
+        columns:
+          - name: spriden_pidm
+            description: Internal person ID (primary key for all Banner person records)
+            tests:
+              - not_null
+          
+          - name: spriden_id  
+            description: External person ID (student ID, employee ID, etc.)
+            tests:
+              - not_null
+          
+          - name: spriden_change_ind
+            description: NULL for current record, populated for historical records
+      
+      # ==================================================
+      # STUDENT INFORMATION
+      # ==================================================
+      
+      - name: sgbstdn
+        description: |
+          Student Master table - core student demographic and enrollment information.
+          One record per student per effective term.
+        identifier: sgbstdn
+        meta:
+          banner_table_type: STUDENT
+          contains_pii: true
+        
+        columns:
+          - name: sgbstdn_pidm
+            description: Internal person ID (links to SPRIDEN)
+            tests:
+              - not_null
+              - relationships:
+                  to: source('banner', 'spriden')
+                  field: spriden_pidm
+          
+          - name: sgbstdn_term_code_eff
+            description: Effective term code for this student record
+            tests:
+              - not_null
+              - relationships:
+                  to: source('banner', 'stvterm')
+                  field: stvterm_code
+      
+      # ==================================================
+      # REGISTRATION & ENROLLMENT
+      # ==================================================
+      
+      - name: sfrstcr
+        description: |
+          Student Registration table - active course registrations.
+          One record per student per course section per term.
+        identifier: sfrstcr
+        meta:
+          banner_table_type: REGISTRATION
+        
+        columns:
+          - name: sfrstcr_pidm
+            description: Internal person ID
+            tests:
+              - not_null
+          
+          - name: sfrstcr_term_code
+            description: Term code
+            tests:
+              - not_null
+          
+          - name: sfrstcr_crn
+            description: Course Reference Number (section identifier)
+            tests:
+              - not_null
+      
+      - name: shrtckn
+        description: |
+          Student Transcript table - historical course work with final grades.
+          One record per completed/graded course.
+        identifier: shrtckn
+        meta:
+          banner_table_type: TRANSCRIPT
+        
+        columns:
+          - name: shrtckn_pidm
+            description: Internal person ID
+            tests:
+              - not_null
+          
+          - name: shrtckn_term_code
+            description: Term code
+            tests:
+              - not_null
+          
+          - name: shrtckn_seq_no
+            description: Sequence number (unique within PIDM+TERM)
+            tests:
+              - not_null
+      
+      # ==================================================
+      # GPA & ACADEMIC STANDING
+      # ==================================================
+      
+      - name: shrgpac
+        description: |
+          Student GPA Calculator - term and cumulative GPA calculations.
+          One record per student per term per level.
+        identifier: shrgpac
+        meta:
+          banner_table_type: GPA
+      
+      # ==================================================
+      # REFERENCE/VALIDATION TABLES
+      # ==================================================
+      
+      - name: stvterm
+        description: |
+          Term Code Validation table.
+          Defines all valid term codes with start/end dates.
+        identifier: stvterm
+        meta:
+          banner_table_type: VALIDATION
+        
+        columns:
+          - name: stvterm_code
+            description: Term code (e.g., '202410' = Fall 2024)
+            tests:
+              - not_null
+              - unique
+      
+      - name: stvmajr
+        description: Major Code Validation table
+        identifier: stvmajr
+        meta:
+          banner_table_type: VALIDATION
+      
+      - name: stvdegc
+        description: Degree Code Validation table
+        identifier: stvdegc
+        meta:
+          banner_table_type: VALIDATION
+      
+      - name: stvlevl
+        description: Level Code Validation table (UG, GR, etc.)
+        identifier: stvlevl
+        meta:
+          banner_table_type: VALIDATION
+      
+      - name: stvstst
+        description: Student Status Validation table
+        identifier: stvstst
+        meta:
+          banner_table_type: VALIDATION
+      
+      # ==================================================
+      # CURRICULUM & COURSE CATALOG
+      # ==================================================
+      
+      - name: scbcrse
+        description: |
+          Course Master table - defines all courses in the catalog.
+          One record per course.
+        identifier: scbcrse
+        meta:
+          banner_table_type: COURSE_CATALOG
+      
+      - name: ssbsect
+        description: |
+          Section Master table - defines course sections/offerings.
+          One record per section per term.
+        identifier: ssbsect
+        meta:
+          banner_table_type: COURSE_SECTION
+      
+      # ==================================================
+      # STUDENT CURRICULUM
+      # ==================================================
+      
+      - name: sorlcur
+        description: |
+          Student Curriculum table - student's declared programs/majors.
+          One record per student per curriculum.
+        identifier: sorlcur
+        meta:
+          banner_table_type: CURRICULUM
+      
+      - name: sorlfos
+        description: |
+          Student Field of Study - student's majors, minors, concentrations.
+          One record per student per field of study.
+        identifier: sorlfos
+        meta:
+          banner_table_type: FIELD_OF_STUDY
